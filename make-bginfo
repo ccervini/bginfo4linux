@@ -1,0 +1,109 @@
+#!/bin/bash
+# C. Cervini, 11/06/2023;
+# Based on work from Vikram Khatri vikram@zinox.com, https://www.zinox.com/archives/170;
+#
+# Purpose: Add BGInfo like information on Linux Desktop
+# Pre-requisite:
+#    ImageMagick
+#    neofetch (but can be removed easily)
+# Usage:
+#   create a working directory and move there; it will be the current directory;
+#   adapt the line with ${DESKTOP_SESSION} to the window manager in use (here, xfce4); neofetch can report those values;
+#   adapt the screen where the new wallpaper will be installed;
+#      run:  xfconf-query -c xfce4-desktop -m
+#      right-click on given screen's desktop, Desktop Settings, click on one of the wallpapers, the above command should display the -p value to pass to xfconf-query commands at the end of the script;
+#   adapt the font's name, size and color that look best for you (see convert below);
+#   ./make-bginfo
+# The new wallpaper will be installed in the specified screen;
+# Note that when the script is invoked by cron, the graphical environmentr variables are not set and thus neofetch cannot obtain the desktop environment and 
+# the window manager; in this case, those values are hard-coded in the script with my current desktop setting; edit as needed;
+# see https://askubuntu.com/questions/911570/why-does-this-cronjob-not-work for a probably better solution;
+# 
+# temporary text file with the gathered system info;
+BGFILE=~/mybginfo/info-file
+
+#  generated image with sys information
+BG=~/mybginfo/bg.png
+
+# original background image into which the system info will be merged;
+WALL=~/mybginfo/xubuntu-eoan.png
+WALL=~/mybginfo/xubuntu-yakkety.png
+WALL=~/mybginfo/xubuntu-focal.png
+
+# generated background image will system info text and $WALL image merged;
+NEWWALL=${WALL}-sysinfo.png
+
+# use the hard-coded selected desktop environment when running as a cron job;
+# otherwise, ask neofetch;
+cat - <<eot > $BGFILE
+Hostname: $(hostname)
+Kernel: $(uname -srm)
+O/S: $(grep PRETTY_NAME /etc/os-release | cut -d\" -f2)
+Uptime: $(uptime)
+$(neofetch --stdout | grep Packages)
+Shell: $(bash --version | grep bash)
+$(neofetch --stdout | grep Resolution)
+$(if [[ -z "${DESKTOP_SESSION}" ]]; then
+   echo DE: Xfce
+   echo WM: Xfwm4
+   echo WM Theme: Greybird-dark 
+else
+   neofetch --stdout | grep DE
+   neofetch --stdout | grep WM
+fi )
+User name: $(whoami)
+CPU model: $(cat /proc/cpuinfo | grep "model name" | awk -F":" '{print $2}' | head -1 | sed -e 's/^ *//')
+Nb CPUs: $(cat /proc/cpuinfo | grep processor | wc -l)
+GPU: $(neofetch --stdout | grep GPU)
+Memory:
+$(free --mebi | gawk '{getline; printf("\ttotal mem: %6d MiB\n\t used mem: %6d MiB\n\t free mem: %6d MiB\n", $2, $3, $7); exit}')
+IP adresses:
+$(ip -o a | gawk '{printf("\t%2s %10s %6s\t%s\n", $1, $2, $3, $4)}')
+DNS Server: $(grep ^nameserver /etc/resolv.conf | awk '{print $2}') 
+Gateway: $(netstat -rn | grep UG | awk '{print $2}') 
+Free Disk: $(df -h | grep -v loop)
+
+Last refreshed: $(date)
+eot
+
+### The following ImageMagick utility generates an image with the 
+### transparent background from the file $BGFILE
+# for a list of available fonts:
+#    convert -list font
+# for a list of colors:
+#    https://imagemagick.org/script/color.php
+cat $BGFILE | \
+#convert -font Courier-Bold -pointsize 20 \
+#convert -font Bitstream-Vera-Sans-Mono-Bold -pointsize 20 \
+#        -fill IndianRed1   \
+#        -fill gold1   \
+#        -fill yellow1   \
+#        -fill red1   \
+convert -font Bitstream-Vera-Sans-Mono -pointsize 12 \
+        -background none \
+        -fill yellow1   \
+        label:@- $BG 
+
+### This utility combines two images and creates a new image
+#composite -gravity south $BG $WALL $NEWWALL
+composite -gravity east $BG $WALL $NEWWALL
+rm $BG
+
+# $BGFILE is still there; consult it to check its content; uncomment the next line if OK;
+# rm $BGFILE
+
+# install the new wallpaper;
+# manually: open generated png in ImageViewer, right-click, Set as Wallpaper;
+# run xfconf-query -c xfce4-desktop -m to get the value to pass to the -p parameter;
+# or see here how to do it programmatically: https://unix.stackexchange.com/questions/596070/how-to-change-wallpaper-on-xfce-from-terminal;
+# on my big LG screen;
+xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitorDP-1/workspace0/last-image -s $NEWWALL
+
+# on my EIZO monitor;
+#xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitorVGA-1/workspace0/last-image -s $NEWWALL
+
+# on my laptop's screen;
+#xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitoreDP-1/workspace0/last-image -s $NEWWALL
+
+# use ctrl-alt-D in Xfce4 to show the desktop on the chosen monitor;
+
